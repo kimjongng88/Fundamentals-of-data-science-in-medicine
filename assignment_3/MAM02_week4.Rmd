@@ -1,0 +1,190 @@
+---
+title: "MAM02 assignment week 4 - Joost Wagemans en Chi Him Ng"
+output: html_notebook 
+---
+
+SVM and ensemble methods are elective approaches when data set is characterized by a relatively large feature set and by non-linear decision boundaries. In our case, the dataset corresponds to the simulation of 250 proteins measurements of 1,000 individuals (500 cases [cc = 1] and 500 controls [cc = 0]). Data were split into a training set (70% of the whole data, 700 individuals: 350 cases and 350 controls) and a test set (30% of the whole data, 300 individuals: 150 cases and 150 controls). Of the 250 simulated proteins distributions:
+
+- some were simulated to be weakly associated to the case/control condition (cc),
+- some were simulated to be strongly associated to the case/control condition,
+- others were simulated to be non-associated associated to the case/control condition with no difference in terms of distribution between cases and controls.
+
+# Libraries
+
+```{r}
+library("pROC")
+library("e1071")
+library("randomForest")
+```
+
+# 1. Import data
+
+```{r}
+raw.training <- read.table("simulatedConcentrations.recoded.training.txt", sep = "\t", header = T)
+raw.test <- read.table("simulatedConcentrations.recoded.test.txt", sep = "\t", header = T)
+raw.training$cc <- as.factor(raw.training$cc)
+raw.test$cc <- as.factor(raw.test$cc)
+```
+
+
+## Que 1.1: 
+**How many rows and columns are in the training set?**
+
+```{r}
+ncol(raw.training)
+nrow(raw.training)
+```
+
+Answer: col 251
+row 700
+
+## Que 1.2: 
+**How many rows and columns are in the test?**
+
+```{r}
+ncol(raw.test)
+nrow(raw.test)
+```
+
+Answer: col 251
+row 300
+
+## Que 1.3: 
+**Is it a balanced problem (same number of elements in each class)?**
+
+```{r}
+length(raw.training)
+```
+
+Answer: **Yes, 251**
+
+# 2. Support vector machines
+
+Fit a linear SVM on the training set data with C classification.
+
+```{r}
+lsvm.fit <- svm(cc ~ ., data = raw.training, type = "C-classification", kernel = "linear", probability = T,cost=0.1)
+```
+
+## Que 2.1 
+Inspect the resulting support vectors (number and type).
+**What is the percentage of training data used for classification?**
+
+```{r}
+lsvm.fit
+```
+
+Answer: **Number of support vectors: 216 -> 86%**
+
+## Que 2.2 
+Predict the class of the test set and estimate the discriminative performances by computing the AUC. **What is the AUC? **
+
+```{r}
+lsvm.pred <- predict(lsvm.fit, newdata = raw.test[,-1], decision.values = F, probability = T)
+auc(raw.test$cc, attr(lsvm.pred, "probabilities")[,2])
+```
+
+Answer: **0.893, this can be considered good**
+
+## Que 2.3
+Repeat the exercise by varying the value of the parameter “cost” in the range [0.1 1 10] and generate a table of results with the value of cost and the corresponding number of support vectors, and AUC on the test data. **What is the best value for the cost function in terms of AUC?** 
+
+```{r}
+
+costs <- c(seq(0.1, 1, 0.1))
+count <- 0
+a_u_c = c()
+for (val in x) {
+testloop <- svm(cc ~ ., data = raw.training, type = "C-classification", kernel = "linear", probability = T,cost=costs)
+testloop2 <- predict(testloop, newdata = raw.test[,-1], decision.values = F, probability = T)
+count<-auc(raw.test$cc, attr(testloop2, "probabilities")[,2])
+a_u_c <- c(a_u_c, count) 
+}
+print(a_u_c)
+data.frame(as.table(setNames(a_u_c,costs)))
+
+```
+
+Answer: **the higher the better it seems, however most have the same values. From 0.3 it is 0.893**
+
+## Que 2.4
+Try different kernel functions and assess the discriminative performances comparing the results with those obtained in the previous point. **What is the best classification model on the test set?**
+
+```{r}
+
+poly <- svm(cc ~ ., data = raw.training, type = "C-classification", kernel = "polynomial", probability = T,cost=costs)
+poly.fit<- predict(poly, newdata = raw.test[,-1], decision.values = F, probability = T)
+poly.score<-auc(raw.test$cc, attr(poly.fit, "probabilities")[,2])
+
+sig <- svm(cc ~ ., data = raw.training, type = "C-classification", kernel = "sigmoid", probability = T,cost=costs)
+sig.fit<- predict(sig, newdata = raw.test[,-1], decision.values = F, probability = T)
+sig.score<-auc(raw.test$cc, attr(sig.fit, "probabilities")[,2])
+
+rb <- svm(cc ~ ., data = raw.training, type = "C-classification", kernel = "radial", probability = T,cost=costs)
+rb.fit<- predict(rb, newdata = raw.test[,-1], decision.values = F, probability = T)
+rb.score<-auc(raw.test$cc, attr(rb.fit, "probabilities")[,2])
+
+print(poly.score)
+print(sig.score)
+print(rb.score)
+
+```
+
+Answer: **They appear to be all better, sigmoid has the highest score.**
+
+# 3. Random Forests
+
+Run the RF on the training data. Random forests analysis can be performed by the randomForest function.
+
+```{r}
+rf.fit <- randomForest(cc ~ ., data = raw.training, importance = T, type = "classification")
+```
+
+## Que 3.1
+Assess the importance of each predictor and plot them. Are you able to interpret the results? **What are the most important variables? Why?**
+
+```{r}
+importance(rf.fit)
+```
+
+Answer: **variables like p_66 are important, because it has a high MeanDecreaseAccuracy this number expresses how much accuracy the model losses by excluding certain variables, and a high MeanDecreaseGin, a measure of how each variable contributes to the homogeneity of the nodes and leaves in the resulting random forest. The higher the value of mean decrease accuracy or mean decrease Gini score, the higher the importance of the variable in the model.**
+
+## Que 3.2
+Predict the class of the test set and compute AUC. **What is the AUC? Is this bad, acceptable, good, ...?**
+
+```{r}
+y_pred = predict(rf.fit, newdata = raw.test[,-1])
+summary(y_pred)
+rf.roc<-roc(raw.test$cc, as.numeric(y_pred))
+plot(rf.roc)
+rf.roc
+
+```
+
+Answer: **Area under the curve: 0.6767**
+
+## Que 3.3
+Try to improve the discriminative performances by increasing the number of trees (500-1000-2500) to be grown and assess the AUC. **What is the best number of trees on the test set?**
+
+```{r}
+rf.fit500 <- randomForest(cc ~ ., data = raw.training, importance = T, type = "classification", ntrees = 500)
+rf.pred500 <- predict(rf.fit500, raw.test)
+auc(raw.test$cc, as.numeric(rf.pred500))
+rf.fit1000 <- randomForest(cc ~ ., data = raw.training, importance = T, type = "classification", ntrees = 1000)
+rf.pred1000 <- predict(rf.fit1000, raw.test)
+auc(raw.test$cc, as.numeric(rf.pred1000))
+rf.fit2500 <- randomForest(cc ~ ., data = raw.training, importance = T, type = "classification", ntrees = 2500)
+rf.pred2500 <- predict(rf.fit2500, raw.test)
+auc(raw.test$cc, as.numeric(rf.pred2500))
+```
+
+Answer: **AUC,  500 - 0.72, 1000 - 0.7267, 2500 - 0.6967**
+
+## Que 3.4
+**How does the performance of RF compare with the one of SVM?**
+
+```{r}
+
+```
+
+Answer: **SVM appears to better for this specific problem.**
